@@ -3,6 +3,7 @@ package com.imc.mvc;
 import com.imc.mvc.annotation.*;
 import com.imc.mvc.model.HandlerModel;
 import com.imc.mvc.util.Play;
+import com.sun.org.apache.xpath.internal.operations.Bool;
 
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
@@ -11,6 +12,7 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.*;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.URL;
 import java.util.ArrayList;
@@ -35,14 +37,26 @@ public class DisPatcherServlet extends HttpServlet {
         resp.setContentType("text/html;charset=utf-8");
         PrintWriter printWriter = resp.getWriter();
 
-        printInfo(req, resp, printWriter);
-
+//        printInfo(req, resp, printWriter);
+        doPost(req, resp);
 
     }
 
     @Override
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        super.doPost(req, resp);
+        resp.setContentType("text/html;charset=utf-8");
+        PrintWriter printWriter = resp.getWriter();
+
+        //根据请求的url查找对应的method
+        try {
+            boolean isMatcher = pattern(req, resp);
+            if(!isMatcher) {
+                printWriter.write("404 not found");
+            }
+        }catch (Exception e) {
+            printWriter.write(e.getMessage());
+        }
+
     }
 
     @Override
@@ -59,6 +73,69 @@ public class DisPatcherServlet extends HttpServlet {
         System.out.println("方法映射-->" + handlerMapping);
 
         System.out.println("初始化结束-->");
+    }
+
+    private boolean pattern(HttpServletRequest req, HttpServletResponse resp) throws Exception{
+        if(handlerMapping.isEmpty()) {
+            return false;
+        }
+
+        String uri = req.getRequestURI().replaceAll("/+", "/");
+//        String context
+        for(Map.Entry<String, HandlerModel> entry : handlerMapping.entrySet()) {
+            if(uri.equals(entry.getKey())) {
+
+                HandlerModel handlerModel = entry.getValue();
+                Object[] params = new Object[handlerModel.paramMap.size()];
+
+                //按顺序存储的方法的类型
+                Class<?>[] paramTypes = handlerModel.method.getParameterTypes();
+
+                for(Map.Entry<String, Integer> paramEntry : handlerModel.paramMap.entrySet()) {
+
+//                    String reqParam = req.getParameter(paramEntry.getKey());
+
+                    String key = paramEntry.getKey();
+                    if(key.equals(HttpServletRequest.class.getName())) {
+                        params[paramEntry.getValue()] = req;
+                    }else if(key.equals(HttpServletResponse.class.getName())) {
+                        params[paramEntry.getValue()] = resp;
+                    }else {
+                        //paramEntry.getValue()得到的就是方法参数所在的序号，paramTypes数组刚好是按顺序保存的方法的参数类型，不得不感叹设计者的厉害
+                        params[paramEntry.getValue()] = convertType(req.getParameter(paramEntry.getKey()), paramTypes[paramEntry.getValue()]);
+                    }
+                }
+                handlerModel.method.invoke(handlerModel.controller, handlerModel.paramMap);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * 把String转换成对应的参数类型
+     * @param target
+     * @param type
+     * @return
+     */
+    private Object convertType(String target, Class type) {
+        if(type == String.class) {
+            return target;
+        }else if(type == Integer.class) {
+            return Integer.valueOf(target);
+        }else if(type == Long.class) {
+            return Long.valueOf(target);
+        }else if(type == Boolean.class) {
+            if(target.toLowerCase().equals("true")) {
+                return true;
+            }else if(target.toLowerCase().equals("false")) {
+                return false;
+            }
+            throw new RuntimeException("不支持的参数类型");
+        }else {
+            return null;
+        }
     }
 
     /**

@@ -10,11 +10,11 @@ import java.util.Map;
  */
 public class HandlerModel {
 
-    Method method;
+    public Method method;
 
-    Object controller;
+    public Object controller;
 
-    Map<String, Integer> paramMap;
+    public Map<String, Integer> paramMap;
 
     public HandlerModel(Method method, Object controller, Map<String, Integer> paramMap) {
         this.method = method;
