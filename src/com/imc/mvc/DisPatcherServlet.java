@@ -1,15 +1,17 @@
 package com.imc.mvc;
 
-import com.imc.mvc.annotation.Autowired;
-import com.imc.mvc.annotation.Controller;
-import com.imc.mvc.annotation.Service;
+import com.imc.mvc.annotation.*;
+import com.imc.mvc.model.HandlerModel;
+import com.imc.mvc.util.Play;
 
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.*;
+import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -25,6 +27,7 @@ public class DisPatcherServlet extends HttpServlet {
 
     private List<String> classNames = new ArrayList<>();
     private Map<String, Object> instanceMap = new HashMap<>();
+    private Map<String, HandlerModel> handlerMapping = new HashMap<>();
 
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
@@ -44,12 +47,107 @@ public class DisPatcherServlet extends HttpServlet {
 
     @Override
     public void init() throws ServletException {
-        System.out.println("初始化");
+        System.out.println("初始化开始-->");
         scanPackage(getInitParameter("scanPackage"));
 
         doInstance();
+        System.out.println("bean映射-->" + instanceMap);
 
         doAutoWired();
+
+        doHandlerMapping();
+        System.out.println("方法映射-->" + handlerMapping);
+
+        System.out.println("初始化结束-->");
+    }
+
+    /**
+     * 建立url到方法的映射
+     */
+    private void doHandlerMapping() {
+
+        if(instanceMap.size() == 0) {
+            return;
+        }
+
+        //遍历controller，把url和对应的方法放到map中
+        for(Map.Entry<String, Object> entry : instanceMap.entrySet()) {
+
+            Class<?> clazz = entry.getValue().getClass();
+            //非controller注解跳过
+            if(!clazz.isAnnotationPresent(Controller.class)) {
+                continue;
+            }
+
+            //类注解上的url,url前面都加了一个"/"，是为了防止用户在写路径url的时候不写"/"或者多写
+            String clsUrl = "/" + clazz.getAnnotation(Controller.class).value();
+            //方法注解上的url
+            String mthdUrl = "";
+            //拼接
+            String url = "";
+            //遍历方法
+            Method[] methods = clazz.getDeclaredMethods();
+            for (Method method : methods) {
+
+                //非RequestMapping注解跳过
+                if (!method.isAnnotationPresent(RequestMapping.class)) {
+                    continue;
+                }
+                mthdUrl = method.getAnnotation(RequestMapping.class).value();
+
+                url = (clsUrl + "/" + mthdUrl).replaceAll("/+", "/");
+
+                //此处不能只保存url和method,因为调用invoke(Object, Object...)需要知道当前方法所在的类及方法中的所有参数
+//                handlerMapping.put(url, method);
+
+                Annotation[][] annotations = method.getParameterAnnotations();
+
+                //获取方法里按顺序排列的所有参数名(引用了asm-3.3.1.jar, 需要在WEB-INF下新建lib文件夹,把jar放入)
+                //比如Controllerr的add方法, 将得到["name", "addr", "request", "response"]
+                String[] paramNames = Play.getMethodParameterNamesByAsm4(clazz, method);
+
+                Map<String, Integer> paramMap = new HashMap<>();
+
+                //获取参数类型,提取Request和Response的索引
+                Class<?>[] paramTypes = method.getParameterTypes();
+
+                for(int i=0; i<annotations.length; i++) {
+                    //获取每个参数上的所有注解, 当i=0时说明获取第一个参数上的所有注解
+                    Annotation[] anots = annotations[i];
+                    if (anots.length == 0) {
+                        //如果没有注解,则是如String abc, Request request这种
+                        Class<?> type = paramTypes[i];
+                        if(type == HttpServletRequest.class || type == HttpServletResponse.class) {
+                            paramMap.put(type.getName(), i);
+                        }
+                    }else {
+                        //参数没有@RequestParam,只写了String name, 那么通过java是无法取到name这个属性名的
+                        //可以通过asm获取
+                        paramMap.put(paramNames[i], i);
+                        continue;
+                    }
+
+                    //如果有注解,遍历每个参数上的所有注解
+                    for(Annotation ans : anots) {
+                        //找到被RequestParam注解的参数,并取value的值
+                        if(ans.annotationType() == RequestParam.class) {
+                            String paramName = ((RequestParam) ans).value();
+                            if(!"".equals(paramName.trim())) {
+                                paramMap.put(paramName, i);
+                            }
+                        }
+                    }
+
+                    HandlerModel model = new HandlerModel(method, entry.getValue(), paramMap);
+
+                    handlerMapping.put(url, model);
+                }
+
+
+            }
+
+        }
+
     }
 
     /**
@@ -88,14 +186,13 @@ public class DisPatcherServlet extends HttpServlet {
                 field.setAccessible(true);
 
                 try {
+                    //@TODO field.set方法
                     field.set(entry.getValue(), instanceMap.get(beanName));
                 } catch (IllegalAccessException e) {
                     e.printStackTrace();
                 }
 
             }
-            entry.getKey();
-            entry.getValue();
 
         }
 
