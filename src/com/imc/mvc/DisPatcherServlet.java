@@ -105,7 +105,7 @@ public class DisPatcherServlet extends HttpServlet {
                         params[paramEntry.getValue()] = convertType(req.getParameter(paramEntry.getKey()), paramTypes[paramEntry.getValue()]);
                     }
                 }
-                handlerModel.method.invoke(handlerModel.controller, handlerModel.paramMap);
+                handlerModel.method.invoke(handlerModel.controller, params);
                 return true;
             }
         }
@@ -157,7 +157,7 @@ public class DisPatcherServlet extends HttpServlet {
             }
 
             //类注解上的url,url前面都加了一个"/"，是为了防止用户在写路径url的时候不写"/"或者多写
-            String clsUrl = "/" + clazz.getAnnotation(Controller.class).value();
+            String clsUrl = "/" + clazz.getAnnotation(RequestMapping.class).value();
             //方法注解上的url
             String mthdUrl = "";
             //拼接
@@ -299,7 +299,7 @@ public class DisPatcherServlet extends HttpServlet {
 
                     //如果注解的值不为空则把值当作bean名称
                     if (!"".equals(serviceName.trim())) {
-                        instanceMap.put(lowerFirstChar(serviceName.trim()), clazz.newInstance());
+                        instanceMap.put(serviceName.trim(), clazz.newInstance());
                     } else {
                         //为空则把实现的接口名当作bean名称
                         Class[] classes = clazz.getInterfaces();
