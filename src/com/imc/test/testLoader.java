@@ -35,7 +35,7 @@ public class testLoader {
     @Test
     public void test3() throws Exception{
         MyClassLoader loader = new MyClassLoader();
-        Class<?> c = loader.findClass("com.alibaba.classload.HighRichHandsome");
+        Class<?> c = loader.findClass("com.imc.test.HighRichHandsome");
         System.out.println("Loaded by :" + c.getClassLoader());
 
         Person p = (Person) c.newInstance();
